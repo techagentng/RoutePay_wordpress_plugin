@@ -1,99 +1,172 @@
 <?php
-/**
- * The base configuration for WordPress
- *
- * The wp-config.php creation script uses this file during the installation.
- * You don't have to use the web site, you can copy this file to "wp-config.php"
- * and fill in the values.
- *
- * This file contains the following configurations:
- *
- * * Database settings
- * * Secret keys
- * * Database table prefix
- * * ABSPATH
- *
- * @link https://wordpress.org/documentation/article/editing-wp-config-php/
- *
- * @package WordPress
+/*
+ * Plugin Name: RoutePay Payment Gateway
+ * Plugin URI: 
+ * Description: Take care of payments on your store.
+ * Author: Routepay
+ * Author URI: http://routepay.com
+ * Version: 1.0.1
  */
 
-// ** Database settings - You can get this info from your web host ** //
-/** The name of the database for WordPress */
-define( 'DB_NAME', 'gateway' );
-
-/** Database username */
-define( 'DB_USER', 'root' );
-
-/** Database password */
-define( 'DB_PASSWORD', '' );
-
-/** Database hostname */
-define( 'DB_HOST', 'localhost' );
-
-/** Database charset to use in creating database tables. */
-define( 'DB_CHARSET', 'utf8mb4' );
-
-/** The database collate type. Don't change this if in doubt. */
-define( 'DB_COLLATE', '' );
-
-/**#@+
- * Authentication unique keys and salts.
- *
- * Change these to different unique phrases! You can generate these using
- * the {@link https://api.wordpress.org/secret-key/1.1/salt/ WordPress.org secret-key service}.
- *
- * You can change these at any point in time to invalidate all existing cookies.
- * This will force all users to have to log in again.
- *
- * @since 2.6.0
- */
-define( 'AUTH_KEY',         '|S&RtpkEuY;!w!GI! RG$J$5zQ(+hCi;OV=b7Zl+QM<I_Ju{PDU):Y4}!>S;rRob' );
-define( 'SECURE_AUTH_KEY',  ';91{3.u-/Q]80X-xs8B}hp}zBhRH~7S E`7Car4F#m[Yw1pU(-l4ATx,6y@&Jnk{' );
-define( 'LOGGED_IN_KEY',    '_zn)Q[ja+byEQ<_kZ ly>v1a)cgKPw[<Pk nBGi>bTW)fYcXFG~Fl7w=6.`8J[:f' );
-define( 'NONCE_KEY',        '21<YFKXxJ+jNTM+<4(El:4h#l?43qv@^Jr)KOki6]3p,^Mi2}qA5(vUdObR/dmYd' );
-define( 'AUTH_SALT',        'mK!Xl*KL]q^9Nw*c?<0&9~[ca3e9RFe<Z1JCNF5Pq_zvlD EWyDQA4J +e &wJT|' );
-define( 'SECURE_AUTH_SALT', '1$T~i&P6:Q@1K|#]Dk~pjlpO*j#mNU#V1MQZ{eafd0JMG-5[.~sC!~d}i%a2:;AO' );
-define( 'LOGGED_IN_SALT',   '01~Zu&WC_2d*[UQZ6.Z+$?Q!wfgH~Jc>xMgZ%H$7bm`pMc*.e=s+xLxYSA~S.HBq' );
-define( 'NONCE_SALT',       'B]G:S^2}=g7-<Mwt-[>kfil#veq![mi>~ 79#z@ss:{&q{#;yq CNInX3H&el}##' );
-
-/**#@-*/
-
-/**
- * WordPress database table prefix.
- *
- * You can have multiple installations in one database if you give each
- * a unique prefix. Only numbers, letters, and underscores please!
- */
-$table_prefix = 'wp_';
-
-/**
- * For developers: WordPress debugging mode.
- *
- * Change this to true to enable the display of notices during development.
- * It is strongly recommended that plugin and theme developers use WP_DEBUG
- * in their development environments.
- *
- * For information on other constants that can be used for debugging,
- * visit the documentation.
- *
- * @link https://wordpress.org/documentation/article/debugging-in-wordpress/
- */
-
-define('WP_DEBUG', true);
-define('WP_DEBUG_LOG', true);
-define('WP_DEBUG_DISPLAY', false);
-
-/* Add any custom values between this line and the "stop editing" line. */
-
-
-
-/* That's all, stop editing! Happy publishing. */
-
-/** Absolute path to the WordPress directory. */
-if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', __DIR__ . '/' );
+add_filter( 'woocommerce_payment_gateways', 'routepay_gateway_class' );
+function routepay_gateway_class( $methods ) {
+    $methods[] = 'Routepay_Gateway'; // your class name is here
+    return $methods;
 }
 
-/** Sets up WordPress vars and included files. */
-require_once ABSPATH . 'wp-settings.php';
+add_action( 'plugins_loaded', 'routepay_init_gateway_class' );
+function routepay_init_gateway_class() {
+    class Routepay_Gateway extends WC_Payment_Gateway {
+        private $api_key;
+        private $api_secret;
+        private $private_key;
+        private $publishable_key;
+        public function __construct() {
+            $this->id = 'routepay';
+            $this->icon = '';
+            $this->has_fields = true;
+            $this->method_title = 'Routepay Gateway';
+            $this->method_description = 'Pay with your debit card via our page. Powered by Routepay.';
+            $this->supports = array( 'products' );
+
+            $this->init_form_fields();
+            $this->init_settings();
+            $this->title = $this->get_option( 'title' );
+            $this->description = $this->get_option( 'description' );
+            $this->enabled = $this->get_option( 'enabled' );
+            $this->testmode = 'yes' === $this->get_option( 'testmode' );
+            $this->api_key = $this->testmode ? $this->get_option( 'test_api_key' ) : $this->get_option( 'api_key' );
+            $this->api_secret = $this->testmode ? $this->get_option( 'test_api_secret' ) : $this->get_option( 'api_secret' );
+            $this->private_key = $this->testmode ? $this->get_option( 'test_private_key' ) : $this->get_option( 'private_key' );
+            
+            add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+            add_action( 'wp_enqueue_scripts', array( $this, 'payment_scripts' ) );
+        }
+
+        public function init_form_fields() {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title'   => 'Enable/Disable',
+                    'type'    => 'checkbox',
+                    'label'   => 'Enable My Payment Gateway',
+                    'default' => 'yes',
+                ),
+                'api_key' => array(
+                    'title'       => 'API Key',
+                    'type'        => 'text',
+                    'description' => 'Enter your API key.',
+                    'default'     => '',
+                ),
+                'api_secret' => array(
+                    'title'       => 'API Secret',
+                    'type'        => 'password',
+                    'description' => 'Enter your API secret.',
+                    'default'     => '',
+                ),
+                'private_key' => array(
+                    'title'       => 'Private Key',
+                    'type'        => 'text',
+                    'description' => 'Enter your private key.',
+                    'default'     => '',
+                ),
+                'publishable_key' => array(
+                    'title'       => 'Publishable Key',
+                    'type'        => 'text',
+                    'description' => 'Enter your publishable key.',
+                    'default'     => '',
+                ),
+                // ... other settings fields
+            );
+        }
+        
+
+        function process_admin_options() {
+            parent::process_admin_options();
+            
+            // Additional logic to save settings
+            $this->api_key = $this->get_option('api_key');
+            $this->api_secret = $this->get_option('api_secret');
+        }
+
+        public function payment_fields() {
+            // You can customize your payment fields here
+        }
+
+        public function payment_scripts() {
+            // Custom CSS and JS can be added here
+        }
+
+        public function process_payment($order_id) {
+            // Get the order object
+            $order = wc_get_order($order_id);
+        
+            // Ensure that order data is present
+            if (!$order) {
+                wc_add_notice('Invalid order.', 'error');
+                return;
+            }
+        
+            // Set up your payment processor endpoint and credentials
+            $request_url = "https://authdev.routepay.com/connect/token";
+            $client_id = $this->get_option('api_key'); // Use the saved API key from settings
+            $client_secret = $this->get_option('api_secret'); // Use the saved API secret from settings
+
+            // Set up the payload
+            $payload = array(
+                'grant_type' => 'client_credentials',
+                'client_id' => $client_id,
+                'client_secret' => $client_secret,
+            );
+        
+            // Make the POST request using wp_safe_remote_post
+            $response = wp_safe_remote_post($request_url, array(
+                'body' => $payload,
+            ));
+        
+            // Check for errors in the request
+            if (is_wp_error($response)) {
+                // Handle error
+                wc_add_notice('Error communicating with the payment processor.', 'error');
+                return;
+            }
+        
+            // Process the response
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+        
+            // Check if the access token is present in the response
+            if (isset($body['access_token'])) {
+                // Token obtained successfully, you can use $body['access_token'] in further API requests
+                // Add your payment processing logic here
+        
+                // Construct the payment payload
+                $payment_payload = array(
+                    'merchantId' => $client_id,
+                    'returnUrl' => 'http://www.test.com/return',
+                    'merchantReference' => rand(), // Generating a random integer for merchantReference
+                    'totalAmount' => $order->get_total(),
+                    'currency' => get_woocommerce_currency(),
+                    'customer' => array(
+                        'email' => $order->get_billing_email(),
+                        'mobile' => $order->get_billing_phone(),
+                        'firstname' => $order->get_billing_first_name(),
+                        'lastname' => $order->get_billing_last_name(),
+                        'username' => $order->get_billing_company(), // You can adjust this based on your needs
+                    ),
+                    'products' => array(),
+                );
+        
+                // Continue with your existing code...
+                $payment_response = wp_safe_remote_post('https://apidev.routepay.com/payment/api/v1/Payment/SetRequest', array(
+                    'body' => json_encode($payment_payload),
+                    'headers' => array('Content-Type' => 'application/json'),
+                ));
+        
+                // Continue with your existing code...
+            } else {
+                // Handle the case where the token was not obtained successfully
+                wc_add_notice('Failed to obtain access token from the payment processor.', 'error');
+                return;
+            }
+        }
+    }
+}
